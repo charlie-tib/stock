@@ -4,10 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 const STORAGE_KEY = "agent4stock-chat-v1";
 const modes = [
-  ["chat", "聊天"],
-  ["pre_market", "盘前"],
+  ["chat", "日常问答"],
+  ["pre_market", "盘前判断"],
   ["analysis", "个股分析"],
-  ["review", "复盘"]
+  ["review", "交易复盘"]
 ];
 
 const initialContext = {
@@ -112,13 +112,14 @@ export default function HomePage() {
     <main className="app-shell">
       <header className="topbar">
         <div className="brand">
+          <div className="eyebrow">AI Trading Desk</div>
           <div className="title">Agent4Stock</div>
-          <div className="subtitle">你的总控投研助手</div>
+          <div className="subtitle">手机端投研对话台</div>
         </div>
-        <div className="connection">{connection}</div>
+        <div className={`connection ${loading ? "live" : ""}`}>{connection}</div>
       </header>
 
-      <nav className="modebar" aria-label="分析模式">
+      <nav className="modebar panel-soft" aria-label="分析模式">
         {modes.map(([value, label]) => (
           <button
             className={`chip ${mode === value ? "active" : ""}`}
@@ -131,7 +132,7 @@ export default function HomePage() {
         ))}
       </nav>
 
-      <details className="panel" open>
+      <details className="panel context-panel" open>
         <summary>会话参数</summary>
         <div className="context-grid">
           <label>
@@ -182,20 +183,42 @@ export default function HomePage() {
         </div>
       </details>
 
-      <section className="panel chat" ref={chatRef} aria-live="polite">
+      <section className="panel chat-card">
+        <div className="chat-head">
+          <div>
+            <div className="section-title">对话记录</div>
+            <div className="section-subtitle">总控 LLM 的回复会显示在这里</div>
+          </div>
+          <div className="pill">{messages.length} 条</div>
+        </div>
+        <div className="chat" ref={chatRef} aria-live="polite">
         {messages.length === 0 ? (
-          <div className="empty">先输入一句话开始对话。</div>
+          <div className="empty-state">
+            <div className="empty-title">还没有对话</div>
+            <div className="empty-copy">
+              在下方输入问题，例如“明天盘前怎么看 600519？”，发送后模型回复会出现在这个区域。
+            </div>
+          </div>
         ) : (
-          messages.map((message, index) => (
-            <article
-              className={`message ${message.role} ${message.error ? "error" : ""}`}
-              key={`${message.role}-${index}`}
-            >
-              <span className="role">{message.role === "user" ? "你" : "总控 LLM"}</span>
-              {message.content}
-            </article>
-          ))
+          <>
+            {messages.map((message, index) => (
+              <article
+                className={`message ${message.role} ${message.error ? "error" : ""}`}
+                key={`${message.role}-${index}`}
+              >
+                <span className="role">{message.role === "user" ? "你发送的问题" : "总控 LLM 回复"}</span>
+                {message.content}
+              </article>
+            ))}
+            {loading ? (
+              <article className="message assistant thinking">
+                <span className="role">总控 LLM 回复</span>
+                正在组织回答...
+              </article>
+            ) : null}
+          </>
         )}
+        </div>
       </section>
 
       <section className="composer">
@@ -212,7 +235,7 @@ export default function HomePage() {
             }}
           />
           <div className="actions">
-            <div className="status">{status}</div>
+            <div className="status">{status || "Enter 发送，Shift + Enter 换行"}</div>
             <div className="button-row">
               <button className="clear" type="button" onClick={clearChat}>
                 清空
