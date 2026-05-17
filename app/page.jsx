@@ -46,6 +46,8 @@ export default function HomePage() {
   const [quote, setQuote] = useState(null);
   const [quoteStatus, setQuoteStatus] = useState("");
   const [quoteLoading, setQuoteLoading] = useState(false);
+  const [kline, setKline] = useState(null);
+  const [klineStatus, setKlineStatus] = useState("");
   const [agentStatus, setAgentStatus] = useState(null);
   const chatRef = useRef(null);
 
@@ -80,11 +82,42 @@ export default function HomePage() {
       }
       setQuote(data.quote);
       setQuoteStatus(`更新时间 ${data.quote?.timestamp || "未知"}`);
+      await refreshKline(symbol);
     } catch (error) {
       setQuote(null);
       setQuoteStatus(error.message);
     } finally {
       setQuoteLoading(false);
+    }
+  }
+
+  async function fetchKline(symbol, period, limit) {
+    const response = await fetch(
+      `/api/kline?symbol=${encodeURIComponent(symbol)}&period=${encodeURIComponent(period)}&limit=${limit}`,
+      { cache: "no-store" }
+    );
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || `${period} K线获取失败`);
+    }
+    return data.kline;
+  }
+
+  async function refreshKline(symbolOverride) {
+    const symbol = (symbolOverride || context.symbol).trim();
+    if (!symbol) return;
+
+    setKlineStatus("正在读取 K 线...");
+    try {
+      const [daily, minute15] = await Promise.all([
+        fetchKline(symbol, "daily", 160),
+        fetchKline(symbol, "15m", 160)
+      ]);
+      setKline({ daily, minute15 });
+      setKlineStatus(`日K ${daily.bars.length} 条 · 15m ${minute15.bars.length} 条`);
+    } catch (error) {
+      setKline(null);
+      setKlineStatus(error.message);
     }
   }
 
@@ -122,6 +155,14 @@ export default function HomePage() {
         setQuoteStatus(`已随对话更新行情 ${data.quote.timestamp || ""}`);
       } else if (data.quoteError) {
         setQuoteStatus(data.quoteError);
+      }
+      if (data.klines) {
+        setKline(data.klines);
+        const dailyCount = data.klines.daily?.bars?.length || 0;
+        const minuteCount = data.klines.minute15?.bars?.length || 0;
+        setKlineStatus(`已随对话更新 K 线：日K ${dailyCount} 条 · 15m ${minuteCount} 条`);
+      } else if (data.klineError) {
+        setKlineStatus(data.klineError);
       }
       setAgentStatus(data.agents || null);
       setStatus("已完成");
@@ -181,6 +222,8 @@ export default function HomePage() {
                 updateContext("symbol", event.target.value);
                 setQuote(null);
                 setQuoteStatus("");
+                setKline(null);
+                setKlineStatus("");
               }}
               onBlur={refreshQuote}
             />
@@ -234,7 +277,7 @@ export default function HomePage() {
               </div>
             </div>
             <button className="quote-button" type="button" onClick={refreshQuote} disabled={quoteLoading}>
-              {quoteLoading ? "读取中" : "刷新行情"}
+              {quoteLoading ? "读取中" : "刷新数据"}
             </button>
           </div>
           {quote ? (
@@ -282,6 +325,48 @@ export default function HomePage() {
             <div className="quote-empty">还没有行情。填写代码后点“刷新行情”。</div>
           )}
           {quoteStatus ? <div className="quote-status">{quoteStatus}</div> : null}
+        </div>
+        <div className="quote-card">
+          <div className="quote-top">
+            <div>
+              <div className="quote-title">历史 K 线</div>
+              <div className="quote-note">数据源：东方财富公开 K 线。当前读取日 K 与 15 分钟 K。</div>
+            </div>
+            <button className="quote-button" type="button" onClick={() => refreshKline()} disabled={!context.symbol}>
+              刷新 K 线
+            </button>
+          </div>
+          {kline?.daily?.summary ? (
+            <div className="kline-summary">
+              <div>
+                <span className="metric-label">日K收盘</span>
+                <span className="metric-value">{kline.daily.summary.last?.close ?? "--"}</span>
+              </div>
+              <div>
+                <span className="metric-label">MA5 / MA20</span>
+                <span className="metric-value small">
+                  {kline.daily.summary.ma5 ?? "--"} / {kline.daily.summary.ma20 ?? "--"}
+                </span>
+              </div>
+              <div>
+                <span className="metric-label">20日高低</span>
+                <span className="metric-value small">
+                  {kline.daily.summary.high20 ?? "--"} / {kline.daily.summary.low20 ?? "--"}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="quote-empty">还没有 K 线。填写代码后点“刷新 K 线”。</div>
+          )}
+          {kline?.minute15?.summary ? (
+            <div className="quote-grid">
+              <span>15m 最新 {kline.minute15.summary.last?.close ?? "--"}</span>
+              <span>15m MA5 {kline.minute15.summary.ma5 ?? "--"}</span>
+              <span>15m MA20 {kline.minute15.summary.ma20 ?? "--"}</span>
+              <span>15m 趋势 {kline.minute15.summary.trend}</span>
+            </div>
+          ) : null}
+          {klineStatus ? <div className="quote-status">{klineStatus}</div> : null}
         </div>
       </details>
 
