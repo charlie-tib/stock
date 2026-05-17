@@ -23,7 +23,8 @@ export function buildFundamentalInput({
   metrics = {},
   series = [],
   evidence = [],
-  sourceSummary = {}
+  sourceSummary = {},
+  sourceLinks = {}
 }) {
   return {
     symbol: normalizeStockCode(symbol),
@@ -49,15 +50,28 @@ export function buildFundamentalInput({
       debt_ratio: metrics.debt_ratio ?? null,
       ocf: metrics.ocf ?? null,
       revenue_yoy: metrics.revenue_yoy ?? null,
-      profit_yoy: metrics.profit_yoy ?? null
+      profit_yoy: metrics.profit_yoy ?? null,
+      price: metrics.price ?? null,
+      change_percent: metrics.change_percent ?? null,
+      turnover_rate: metrics.turnover_rate ?? null,
+      total_market_value_wan: metrics.total_market_value_wan ?? null,
+      circulating_market_value_wan: metrics.circulating_market_value_wan ?? null,
+      amount_wan: metrics.amount_wan ?? null
     },
     financial_series: Array.isArray(series) ? series : [],
     evidence: Array.isArray(evidence) ? evidence : [],
+    source_links: {
+      eastmoney: sourceLinks.eastmoney || "",
+      cninfo: sourceLinks.cninfo || "",
+      ir: sourceLinks.ir || ""
+    },
     source_summary: {
       annual_reports: sourceSummary.annual_reports ?? 0,
       quarterly_reports: sourceSummary.quarterly_reports ?? 0,
       notices: sourceSummary.notices ?? 0,
+      cninfo_items: sourceSummary.cninfo_items ?? 0,
       ir_items: sourceSummary.ir_items ?? 0,
+      disclosure_items: sourceSummary.disclosure_items ?? 0,
       updated_at: new Date().toISOString()
     }
   };
@@ -72,6 +86,7 @@ export function fundamentalInputToPrompt(input) {
     `profile: ${JSON.stringify(input.profile || {}, null, 2)}`,
     `metrics: ${JSON.stringify(input.metrics || {}, null, 2)}`,
     `financial_series: ${JSON.stringify((input.financial_series || []).slice(-8), null, 2)}`,
+    `source_links: ${JSON.stringify(input.source_links || {}, null, 2)}`,
     `evidence:\n${(input.evidence || [])
       .slice(0, 12)
       .map((item) => {
@@ -79,6 +94,8 @@ export function fundamentalInputToPrompt(input) {
           `- source: ${item.source || ""}`,
           `  date: ${item.date || ""}`,
           `  title: ${item.title || ""}`,
+          `  kind: ${item.kind || ""}`,
+          `  url: ${item.url || ""}`,
           `  chunk: ${item.chunk || ""}`
         ].join("\n");
       })

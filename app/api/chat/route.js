@@ -3,6 +3,12 @@ export const dynamic = "force-dynamic";
 
 import { callDeepSeek } from "../../lib/deepseek";
 import { fetchEastmoneyKline, klineToPrompt } from "../../lib/eastmoneyKline";
+import { collectFundamentalPackage } from "../../lib/fundamentalPipeline";
+import {
+  fundamentalReportToPrompt,
+  runFundamentalAgent,
+  shouldRunFundamentalAgent
+} from "../../lib/fundamentalAgent";
 import {
   runTechnicalAgent,
   shouldRunTechnicalAgent,
@@ -48,10 +54,11 @@ function buildMessages(payload) {
     : payload.klineError
       ? `kline_error: ${payload.klineError}`
       : "kline: not requested";
+  const fundamentalBlock = fundamentalReportToPrompt(payload.fundamentalReport);
 
   messages.push({
     role: "system",
-    content: `Structured context:\n${context}\n\n${quoteBlock}\n\n${klineBlock}\n\n${technicalBlock}`
+    content: `Structured context:\n${context}\n\n${quoteBlock}\n\n${klineBlock}\n\n${technicalBlock}\n\n${fundamentalBlock}`
   });
   messages.push({ role: "user", content: String(payload.user_question || "") });
   return messages;
@@ -114,9 +121,40 @@ export async function POST(request) {
     }
   }
 
+  let fundamentalReport = null;
+  let fundamentalInput = null;
+  if (shouldRunFundamentalAgent(payload, question)) {
+    try {
+      const fundamentalPackage = await collectFundamentalPackage(payload.symbol, {
+        eastmoneyLimit: 8,
+        cninfoLimit: 8,
+        irLimit: 4
+      });
+      fundamentalInput = fundamentalPackage.fundamentalInput;
+      fundamentalReport = await runFundamentalAgent({
+        payload: { ...payload, user_question: question },
+        fundamentalInput
+      });
+    } catch (error) {
+      fundamentalReport = {
+        name: "fundamental",
+        error: error.message || "基本面 Agent 调用失败"
+      };
+    }
+  }
+
   try {
     const result = await callDeepSeek(
-      buildMessages({ ...payload, user_question: question, quote, quoteError, klines, klineError, technicalReport }),
+      buildMessages({
+        ...payload,
+        user_question: question,
+        quote,
+        quoteError,
+        klines,
+        klineError,
+        technicalReport,
+        fundamentalReport
+      }),
       { temperature: 0.2 }
     );
     return Response.json({
@@ -126,8 +164,10 @@ export async function POST(request) {
       klines,
       klineError,
       agents: {
-        technical: technicalReport
+        technical: technicalReport,
+        fundamental: fundamentalReport
       },
+      fundamentalInput,
       raw: result.raw
     });
   } catch (error) {

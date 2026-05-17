@@ -1,47 +1,12 @@
 import {
-  buildFundamentalInput,
   fundamentalInputToPrompt
 } from "../../lib/basicFundamental.js";
 import { runFundamentalAgent, fundamentalReportToPrompt } from "../../lib/fundamentalAgent.js";
-import {
-  eastmoneyAnnouncementSummary,
-  fetchEastmoneyAnnouncementPage,
-  pickFundamentalEvidence
-} from "../../lib/fundamentalSources.js";
+import { eastmoneyAnnouncementSummary } from "../../lib/fundamentalSources.js";
+import { collectFundamentalPackage } from "../../lib/fundamentalPipeline.js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function buildMockFundamentalData(symbol, announcementPage) {
-  const stockName = announcementPage?.stockInfo?.name || "";
-  const notices = announcementPage?.notices || [];
-
-  return buildFundamentalInput({
-    symbol,
-    name: stockName,
-    profile: {
-      industry: announcementPage?.stockInfo?.hyname || "",
-      main_business: "待从年报/季报/公告中抽取",
-      business_layout: notices
-        .filter((item) => item.kind === "business" || item.kind === "report")
-        .slice(0, 5)
-        .map((item) => item.title),
-      competitive_edge: [],
-      business_stage: "unknown",
-      growth_driver: "待采集",
-      risk_factors: []
-    },
-    metrics: {},
-    series: [],
-    evidence: pickFundamentalEvidence(announcementPage),
-    sourceSummary: {
-      annual_reports: notices.filter((item) => /年报|年度报告/.test(item.title)).length,
-      quarterly_reports: notices.filter((item) => /季报|季度报告|半年报|半年度报告/.test(item.title)).length,
-      notices: notices.length,
-      ir_items: notices.filter((item) => /业绩说明会|投资者关系|路演|调研|互动易/.test(item.title)).length
-    }
-  });
-}
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -52,11 +17,17 @@ export async function GET(request) {
   }
 
   try {
-    const announcementPage = await fetchEastmoneyAnnouncementPage(symbol);
-    const fundamentalInput = buildMockFundamentalData(symbol, announcementPage);
+    const { collected, quote, fundamentalInput } = await collectFundamentalPackage(symbol, {
+      eastmoneyLimit: 8,
+      cninfoLimit: 8,
+      irLimit: 4
+    });
     return Response.json({
       symbol,
-      announcementPage: eastmoneyAnnouncementSummary(announcementPage),
+      quote,
+      announcementPage: eastmoneyAnnouncementSummary(collected.announcementPage),
+      cninfoPage: collected.cninfoPage,
+      irPage: collected.irPage,
       fundamentalInput,
       promptPreview: fundamentalInputToPrompt(fundamentalInput)
     });
@@ -79,11 +50,15 @@ export async function POST(request) {
   }
 
   try {
-    const announcementPage = await fetchEastmoneyAnnouncementPage(symbol);
-    const fundamentalInput = buildMockFundamentalData(symbol, announcementPage);
+    const { collected, quote, fundamentalInput } = await collectFundamentalPackage(symbol, {
+      eastmoneyLimit: 8,
+      cninfoLimit: 8,
+      irLimit: 4
+    });
     const report = await runFundamentalAgent({ payload, fundamentalInput });
     return Response.json({
       symbol,
+      quote,
       fundamentalInput,
       report,
       promptPreview: fundamentalInputToPrompt(fundamentalInput),

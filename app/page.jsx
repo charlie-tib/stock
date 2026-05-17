@@ -49,6 +49,10 @@ export default function HomePage() {
   const [kline, setKline] = useState(null);
   const [klineStatus, setKlineStatus] = useState("");
   const [fundamentalStatus, setFundamentalStatus] = useState("");
+  const [fundamentalData, setFundamentalData] = useState(null);
+  const [fundamentalReport, setFundamentalReport] = useState(null);
+  const [fundamentalReportStatus, setFundamentalReportStatus] = useState("");
+  const [fundamentalReportLoading, setFundamentalReportLoading] = useState(false);
   const [agentStatus, setAgentStatus] = useState(null);
   const chatRef = useRef(null);
 
@@ -134,10 +138,14 @@ export default function HomePage() {
       if (!response.ok) {
         throw new Error(data.error || "基本面采集失败");
       }
+      setFundamentalData(data.fundamentalInput || null);
+      setFundamentalReport(null);
+      setFundamentalReportStatus("");
       setFundamentalStatus(
-        `${data.announcementPage || "已采集公告页"} · 公告 ${data.fundamentalInput?.source_summary?.notices || 0} 条`
+        `${data.announcementPage || "已采集公告页"} · 东财 ${data.fundamentalInput?.source_summary?.notices || 0} 条 · 巨潮 ${data.fundamentalInput?.source_summary?.cninfo_items || 0} 条 · IR ${data.fundamentalInput?.source_summary?.ir_items || 0} 条`
       );
     } catch (error) {
+      setFundamentalData(null);
       setFundamentalStatus(error.message);
     }
   }
@@ -205,6 +213,39 @@ export default function HomePage() {
     setStatus("");
     setConnection("等待输入");
     setAgentStatus(null);
+    setFundamentalData(null);
+    setFundamentalReport(null);
+    setFundamentalReportStatus("");
+  }
+
+  async function runFundamentalAnalysis() {
+    const symbol = context.symbol.trim();
+    if (!symbol || fundamentalReportLoading) return;
+
+    setFundamentalReportLoading(true);
+    setFundamentalReportStatus("正在分析基本面...");
+    try {
+      const response = await fetch("/api/fundamental", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbol,
+          user_question: question.trim() || `请分析 ${symbol} 的基本面`
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "基本面分析失败");
+      }
+      setFundamentalData(data.fundamentalInput || fundamentalData);
+      setFundamentalReport(data.report || null);
+      setFundamentalReportStatus("分析完成");
+    } catch (error) {
+      setFundamentalReport(null);
+      setFundamentalReportStatus(error.message);
+    } finally {
+      setFundamentalReportLoading(false);
+    }
   }
 
   return (
@@ -395,14 +436,58 @@ export default function HomePage() {
               <div className="quote-title">基本面公告采集</div>
               <div className="quote-note">先采集东方财富公告页，后续再扩展巨潮、IR、年报正文。</div>
             </div>
-            <button className="quote-button" type="button" onClick={refreshFundamentalPreview} disabled={!context.symbol}>
-              采集公告
-            </button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="quote-button" type="button" onClick={refreshFundamentalPreview} disabled={!context.symbol}>
+                采集公告
+              </button>
+              <button
+                className="quote-button"
+                type="button"
+                onClick={runFundamentalAnalysis}
+                disabled={!context.symbol || fundamentalReportLoading}
+              >
+                {fundamentalReportLoading ? "分析中" : "分析基本面"}
+              </button>
+            </div>
           </div>
           <div className="quote-empty">
             点击“采集公告”后，会读取公告列表并准备喂给基本面 Agent 的结构化输入。
           </div>
+          {fundamentalData ? (
+            <div className="fundamental-preview">
+              <div className="quote-grid">
+                <span>公司 {fundamentalData.name || "--"}</span>
+                <span>东财 {fundamentalData.source_summary?.notices || 0}</span>
+                <span>巨潮 {fundamentalData.source_summary?.cninfo_items || 0}</span>
+                <span>IR {fundamentalData.source_summary?.ir_items || 0}</span>
+                <span>财务期数 {(fundamentalData.financial_series || []).length}</span>
+                <span>PE {fundamentalData.metrics?.pe ?? "--"}</span>
+              </div>
+              <div className="quote-grid">
+                <span>ROE {fundamentalData.metrics?.roe ?? "--"}</span>
+                <span>营收同比 {fundamentalData.metrics?.revenue_yoy ?? "--"}</span>
+                <span>净利同比 {fundamentalData.metrics?.profit_yoy ?? "--"}</span>
+                <span>增长驱动 {fundamentalData.profile?.growth_driver || "待抽取"}</span>
+              </div>
+              <div className="quote-note">
+                证据标题：{(fundamentalData.evidence || [])
+                  .slice(0, 4)
+                  .map((item) => item.title)
+                  .join(" / ") || "暂无"}
+              </div>
+              <div className="quote-note">
+                证据块已整理好，可以直接喂给基本面子 agent。
+              </div>
+            </div>
+          ) : null}
+          {fundamentalReport ? (
+            <div className="fundamental-preview">
+              <div className="quote-note">基本面 agent 结论</div>
+              <pre className="fundamental-report">{fundamentalReport.report || "暂无结论"}</pre>
+            </div>
+          ) : null}
           {fundamentalStatus ? <div className="quote-status">{fundamentalStatus}</div> : null}
+          {fundamentalReportStatus ? <div className="quote-status">{fundamentalReportStatus}</div> : null}
         </div>
       </details>
 
@@ -427,6 +512,34 @@ export default function HomePage() {
             {!agentStatus.technical.error && agentStatus.technical.knowledge?.length ? (
               <small>
                 {agentStatus.technical.knowledge.map((item) => item.title).join(" / ")}
+              </small>
+            ) : null}
+          </div>
+        ) : null}
+        {agentStatus?.fundamental ? (
+          <div className="agent-strip">
+            <div>
+              <b>基本面 Agent</b>
+              <span>
+                {agentStatus.fundamental.error
+                  ? agentStatus.fundamental.error
+                  : `已调用 · ${agentStatus.fundamental.signal?.signal || "neutral"} · 置信度 ${agentStatus.fundamental.signal?.confidence || "low"}`}
+              </span>
+            </div>
+            {!agentStatus.fundamental.error && agentStatus.fundamental.structured?.executive_summary ? (
+              <small>{agentStatus.fundamental.structured.executive_summary}</small>
+            ) : null}
+            {!agentStatus.fundamental.error && agentStatus.fundamental.structured?.red_flags?.length ? (
+              <small>
+                红旗：{agentStatus.fundamental.structured.red_flags
+                  .slice(0, 2)
+                  .map((item) => `${item.severity || "medium"}:${item.flag}`)
+                  .join(" / ")}
+              </small>
+            ) : null}
+            {!agentStatus.fundamental.error && agentStatus.fundamental.knowledge?.length ? (
+              <small>
+                方法论：{agentStatus.fundamental.knowledge.map((item) => item.title).join(" / ")}
               </small>
             ) : null}
           </div>
