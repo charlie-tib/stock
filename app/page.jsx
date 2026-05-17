@@ -43,6 +43,9 @@ export default function HomePage() {
   const [status, setStatus] = useState("");
   const [connection, setConnection] = useState("等待输入");
   const [loading, setLoading] = useState(false);
+  const [quote, setQuote] = useState(null);
+  const [quoteStatus, setQuoteStatus] = useState("");
+  const [quoteLoading, setQuoteLoading] = useState(false);
   const chatRef = useRef(null);
 
   useEffect(() => {
@@ -58,6 +61,30 @@ export default function HomePage() {
 
   function updateContext(key, value) {
     setContext((current) => ({ ...current, [key]: value }));
+  }
+
+  async function refreshQuote() {
+    const symbol = context.symbol.trim();
+    if (!symbol || quoteLoading) return;
+
+    setQuoteLoading(true);
+    setQuoteStatus("正在读取行情...");
+    try {
+      const response = await fetch(`/api/quote?symbol=${encodeURIComponent(symbol)}`, {
+        cache: "no-store"
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "行情获取失败");
+      }
+      setQuote(data.quote);
+      setQuoteStatus(`更新时间 ${data.quote?.timestamp || "未知"}`);
+    } catch (error) {
+      setQuote(null);
+      setQuoteStatus(error.message);
+    } finally {
+      setQuoteLoading(false);
+    }
   }
 
   async function sendMessage() {
@@ -88,6 +115,12 @@ export default function HomePage() {
       }
 
       setMessages((current) => [...current, { role: "assistant", content: data.answer }]);
+      if (data.quote) {
+        setQuote(data.quote);
+        setQuoteStatus(`已随对话更新行情 ${data.quote.timestamp || ""}`);
+      } else if (data.quoteError) {
+        setQuoteStatus(data.quoteError);
+      }
       setStatus("已完成");
       setConnection("可继续对话");
     } catch (error) {
@@ -140,7 +173,12 @@ export default function HomePage() {
             <input
               value={context.symbol}
               placeholder="例如 600519"
-              onChange={(event) => updateContext("symbol", event.target.value)}
+              onChange={(event) => {
+                updateContext("symbol", event.target.value);
+                setQuote(null);
+                setQuoteStatus("");
+              }}
+              onBlur={refreshQuote}
             />
           </label>
           <label>
@@ -180,6 +218,66 @@ export default function HomePage() {
               <option value="aggressive">激进</option>
             </select>
           </label>
+        </div>
+        <div className="quote-card">
+          <div className="quote-top">
+            <div>
+              <div className="quote-title">
+                {quote ? `${quote.name || "行情快照"} ${quote.code || ""}` : "真实行情快照"}
+              </div>
+              <div className="quote-note">
+                数据源：腾讯财经公开行情。输入代码后刷新，发送问题时也会自动读取。
+              </div>
+            </div>
+            <button className="quote-button" type="button" onClick={refreshQuote} disabled={quoteLoading}>
+              {quoteLoading ? "读取中" : "刷新行情"}
+            </button>
+          </div>
+          {quote ? (
+            <>
+              <div className="quote-main">
+                <div>
+                  <span className="metric-label">现价</span>
+                  <span className="metric-value">{quote.price ?? "--"}</span>
+                </div>
+                <div>
+                  <span className="metric-label">涨跌幅</span>
+                  <span className={Number(quote.changePercent) >= 0 ? "metric-value up" : "metric-value down"}>
+                    {quote.changePercent ?? "--"}%
+                  </span>
+                </div>
+                <div>
+                  <span className="metric-label">成交额</span>
+                  <span className="metric-value">{quote.amountWan ?? "--"} 万</span>
+                </div>
+              </div>
+              <div className="quote-grid">
+                <span>今开 {quote.open ?? "--"}</span>
+                <span>昨收 {quote.previousClose ?? "--"}</span>
+                <span>最高 {quote.high ?? "--"}</span>
+                <span>最低 {quote.low ?? "--"}</span>
+                <span>换手 {quote.turnoverRate ?? "--"}%</span>
+                <span>市盈 {quote.pe ?? "--"}</span>
+              </div>
+              <div className="book">
+                <div>
+                  <b>买盘</b>
+                  {(quote.bid || []).slice(0, 3).map((item, index) => (
+                    <span key={`bid-${index}`}>买{index + 1} {item.price ?? "--"} / {item.volume ?? "--"}</span>
+                  ))}
+                </div>
+                <div>
+                  <b>卖盘</b>
+                  {(quote.ask || []).slice(0, 3).map((item, index) => (
+                    <span key={`ask-${index}`}>卖{index + 1} {item.price ?? "--"} / {item.volume ?? "--"}</span>
+                  ))}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="quote-empty">还没有行情。填写代码后点“刷新行情”。</div>
+          )}
+          {quoteStatus ? <div className="quote-status">{quoteStatus}</div> : null}
         </div>
       </details>
 

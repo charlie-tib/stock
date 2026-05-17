@@ -1,6 +1,8 @@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+import { fetchTencentQuote, quoteToPrompt } from "../../lib/tencentQuote";
+
 const DEFAULT_BASE_URL = "https://api.deepseek.com";
 
 function buildMessages(payload) {
@@ -27,7 +29,16 @@ function buildMessages(payload) {
     messages.push({ role: item.role, content: String(item.content).slice(0, 8000) });
   }
 
-  messages.push({ role: "system", content: `Structured context:\n${context}` });
+  const quoteBlock = payload.quote
+    ? quoteToPrompt(payload.quote)
+    : payload.quoteError
+      ? `market_quote_error: ${payload.quoteError}`
+      : "market_quote: not requested";
+
+  messages.push({
+    role: "system",
+    content: `Structured context:\n${context}\n\n${quoteBlock}`
+  });
   messages.push({ role: "user", content: String(payload.user_question || "") });
   return messages;
 }
@@ -56,6 +67,16 @@ export async function POST(request) {
     return Response.json({ error: "DEEPSEEK_MODEL is not configured" }, { status: 500 });
   }
 
+  let quote = null;
+  let quoteError = null;
+  if (payload.symbol) {
+    try {
+      quote = await fetchTencentQuote(payload.symbol);
+    } catch (error) {
+      quoteError = error.message || "行情获取失败";
+    }
+  }
+
   const deepseekResponse = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: {
@@ -64,7 +85,7 @@ export async function POST(request) {
     },
     body: JSON.stringify({
       model,
-      messages: buildMessages({ ...payload, user_question: question })
+      messages: buildMessages({ ...payload, user_question: question, quote, quoteError })
     })
   });
 
@@ -87,5 +108,5 @@ export async function POST(request) {
   }
 
   const answer = data?.choices?.[0]?.message?.content || "";
-  return Response.json({ answer, raw: data });
+  return Response.json({ answer, quote, quoteError, raw: data });
 }

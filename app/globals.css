@@ -194,6 +194,115 @@ textarea {
   resize: none;
 }
 
+.quote-card {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #f8fafc;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.quote-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.quote-title {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.quote-note,
+.quote-status,
+.quote-empty {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.quote-button {
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-weight: 800;
+  padding: 9px 12px;
+  white-space: nowrap;
+}
+
+.quote-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.quote-main {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.4fr;
+  gap: 8px;
+}
+
+.quote-main > div {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px;
+  display: grid;
+  gap: 4px;
+}
+
+.metric-label {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.metric-value {
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.metric-value.up {
+  color: #c2410c;
+}
+
+.metric-value.down {
+  color: #15803d;
+}
+
+.quote-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.book {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.book > div {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.book b {
+  color: var(--text);
+  font-size: 12px;
+}
+
 .chat {
   overflow: auto;
   display: grid;
@@ -360,6 +469,15 @@ textarea {
 
   .context-grid {
     grid-template-columns: 1fr;
+  }
+
+  .quote-main {
+    grid-template-columns: 1fr;
+  }
+
+  .quote-grid,
+  .book {
+    grid-template-columns: 1fr 1fr;
   }
 
   .message {
