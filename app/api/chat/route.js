@@ -1,9 +1,13 @@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+import { callDeepSeek } from "../../lib/deepseek";
+import {
+  runTechnicalAgent,
+  shouldRunTechnicalAgent,
+  technicalReportToPrompt
+} from "../../lib/technicalAgent";
 import { fetchTencentQuote, quoteToPrompt } from "../../lib/tencentQuote";
-
-const DEFAULT_BASE_URL = "https://api.deepseek.com";
 
 function buildMessages(payload) {
   const context = [
@@ -34,10 +38,11 @@ function buildMessages(payload) {
     : payload.quoteError
       ? `market_quote_error: ${payload.quoteError}`
       : "market_quote: not requested";
+  const technicalBlock = technicalReportToPrompt(payload.technicalReport);
 
   messages.push({
     role: "system",
-    content: `Structured context:\n${context}\n\n${quoteBlock}`
+    content: `Structured context:\n${context}\n\n${quoteBlock}\n\n${technicalBlock}`
   });
   messages.push({ role: "user", content: String(payload.user_question || "") });
   return messages;
@@ -56,17 +61,6 @@ export async function POST(request) {
     return Response.json({ error: "user_question is required" }, { status: 400 });
   }
 
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  const model = process.env.DEEPSEEK_MODEL;
-  const baseUrl = process.env.DEEPSEEK_BASE_URL || DEFAULT_BASE_URL;
-
-  if (!apiKey) {
-    return Response.json({ error: "DEEPSEEK_API_KEY is not configured" }, { status: 500 });
-  }
-  if (!model) {
-    return Response.json({ error: "DEEPSEEK_MODEL is not configured" }, { status: 500 });
-  }
-
   let quote = null;
   let quoteError = null;
   if (payload.symbol) {
@@ -77,36 +71,39 @@ export async function POST(request) {
     }
   }
 
-  const deepseekResponse = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model,
-      messages: buildMessages({ ...payload, user_question: question, quote, quoteError })
-    })
-  });
-
-  const text = await deepseekResponse.text();
-  let data;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    data = { raw: text };
+  let technicalReport = null;
+  if (shouldRunTechnicalAgent(payload, question)) {
+    try {
+      technicalReport = await runTechnicalAgent({ payload, question, quote });
+    } catch (error) {
+      technicalReport = {
+        name: "technical",
+        error: error.message || "技术面 Agent 调用失败"
+      };
+    }
   }
 
-  if (!deepseekResponse.ok) {
+  try {
+    const result = await callDeepSeek(
+      buildMessages({ ...payload, user_question: question, quote, quoteError, technicalReport }),
+      { temperature: 0.2 }
+    );
+    return Response.json({
+      answer: result.answer,
+      quote,
+      quoteError,
+      agents: {
+        technical: technicalReport
+      },
+      raw: result.raw
+    });
+  } catch (error) {
     return Response.json(
       {
-        error: data?.error?.message || data?.message || `DeepSeek API error ${deepseekResponse.status}`,
-        detail: data
+        error: error.message || "DeepSeek API error",
+        detail: error.detail
       },
-      { status: deepseekResponse.status }
+      { status: error.status || 500 }
     );
   }
-
-  const answer = data?.choices?.[0]?.message?.content || "";
-  return Response.json({ answer, quote, quoteError, raw: data });
 }

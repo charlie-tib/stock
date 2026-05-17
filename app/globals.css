@@ -349,6 +349,37 @@ textarea {
   font-weight: 800;
 }
 
+.agent-strip {
+  border: 1px solid rgba(31, 111, 235, 0.16);
+  border-radius: 13px;
+  background: #f8fbff;
+  padding: 9px 10px;
+  display: grid;
+  gap: 4px;
+}
+
+.agent-strip > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.agent-strip b {
+  font-size: 12px;
+}
+
+.agent-strip span,
+.agent-strip small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.agent-strip small {
+  display: block;
+}
+
 .message {
   max-width: 92%;
   border: 1px solid var(--border);

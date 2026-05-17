@@ -46,6 +46,7 @@ export default function HomePage() {
   const [quote, setQuote] = useState(null);
   const [quoteStatus, setQuoteStatus] = useState("");
   const [quoteLoading, setQuoteLoading] = useState(false);
+  const [agentStatus, setAgentStatus] = useState(null);
   const chatRef = useRef(null);
 
   useEffect(() => {
@@ -97,6 +98,7 @@ export default function HomePage() {
     setLoading(true);
     setStatus("正在请求模型...");
     setConnection("发送中");
+    setAgentStatus(null);
 
     try {
       const response = await fetch("/api/chat", {
@@ -121,6 +123,7 @@ export default function HomePage() {
       } else if (data.quoteError) {
         setQuoteStatus(data.quoteError);
       }
+      setAgentStatus(data.agents || null);
       setStatus("已完成");
       setConnection("可继续对话");
     } catch (error) {
@@ -139,6 +142,7 @@ export default function HomePage() {
     setMessages([]);
     setStatus("");
     setConnection("等待输入");
+    setAgentStatus(null);
   }
 
   return (
@@ -289,6 +293,23 @@ export default function HomePage() {
           </div>
           <div className="pill">{messages.length} 条</div>
         </div>
+        {agentStatus?.technical ? (
+          <div className="agent-strip">
+            <div>
+              <b>技术面 Agent</b>
+              <span>
+                {agentStatus.technical.error
+                  ? agentStatus.technical.error
+                  : `已调用 · RAG ${agentStatus.technical.knowledge?.length || 0} 条`}
+              </span>
+            </div>
+            {!agentStatus.technical.error && agentStatus.technical.knowledge?.length ? (
+              <small>
+                {agentStatus.technical.knowledge.map((item) => item.title).join(" / ")}
+              </small>
+            ) : null}
+          </div>
+        ) : null}
         <div className="chat" ref={chatRef} aria-live="polite">
         {messages.length === 0 ? (
           <div className="empty-state">
