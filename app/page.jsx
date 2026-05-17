@@ -48,6 +48,7 @@ export default function HomePage() {
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [kline, setKline] = useState(null);
   const [klineStatus, setKlineStatus] = useState("");
+  const [fundamentalStatus, setFundamentalStatus] = useState("");
   const [agentStatus, setAgentStatus] = useState(null);
   const chatRef = useRef(null);
 
@@ -118,6 +119,26 @@ export default function HomePage() {
     } catch (error) {
       setKline(null);
       setKlineStatus(error.message);
+    }
+  }
+
+  async function refreshFundamentalPreview() {
+    const symbol = context.symbol.trim();
+    if (!symbol) return;
+    setFundamentalStatus("正在读取基本面公告...");
+    try {
+      const response = await fetch(`/api/fundamental?symbol=${encodeURIComponent(symbol)}`, {
+        cache: "no-store"
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "基本面采集失败");
+      }
+      setFundamentalStatus(
+        `${data.announcementPage || "已采集公告页"} · 公告 ${data.fundamentalInput?.source_summary?.notices || 0} 条`
+      );
+    } catch (error) {
+      setFundamentalStatus(error.message);
     }
   }
 
@@ -367,6 +388,21 @@ export default function HomePage() {
             </div>
           ) : null}
           {klineStatus ? <div className="quote-status">{klineStatus}</div> : null}
+        </div>
+        <div className="quote-card">
+          <div className="quote-top">
+            <div>
+              <div className="quote-title">基本面公告采集</div>
+              <div className="quote-note">先采集东方财富公告页，后续再扩展巨潮、IR、年报正文。</div>
+            </div>
+            <button className="quote-button" type="button" onClick={refreshFundamentalPreview} disabled={!context.symbol}>
+              采集公告
+            </button>
+          </div>
+          <div className="quote-empty">
+            点击“采集公告”后，会读取公告列表并准备喂给基本面 Agent 的结构化输入。
+          </div>
+          {fundamentalStatus ? <div className="quote-status">{fundamentalStatus}</div> : null}
         </div>
       </details>
 
