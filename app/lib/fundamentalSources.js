@@ -30,6 +30,10 @@ function pickTitleFromHtml(html) {
   return match ? stripHtml(match[1]) : "";
 }
 
+function dateOnly(value) {
+  return String(value || "").slice(0, 10);
+}
+
 function textAround(html, keyword, radius = 80) {
   const plain = stripHtml(html);
   const index = plain.indexOf(keyword);
@@ -121,6 +125,18 @@ async function fetchText(url, options = {}) {
   return response.text();
 }
 
+async function fetchJson(url, options = {}) {
+  const text = await fetchText(url, {
+    accept: "application/json,text/plain,*/*",
+    ...options
+  });
+  try {
+    return JSON.parse(text);
+  } catch {
+    return extractJsonpPayload(text);
+  }
+}
+
 function resolveUrl(href, baseUrl) {
   try {
     return new URL(href, baseUrl).toString();
@@ -151,91 +167,142 @@ function pickDetailLinks(html) {
   return links;
 }
 
+function normalizeEastmoneyAnnItem(item) {
+  const codeInfo = item?.codes?.[0] || {};
+  const artCode = item?.art_code || item?.artCode || "";
+  const stockCode = codeInfo.stock_code || "";
+  const title = stripHtml(item?.title || item?.title_ch || "");
+  return {
+    source: "eastmoney",
+    title,
+    url:
+      stockCode && artCode
+        ? `https://data.eastmoney.com/notices/detail/${stockCode}/${artCode}.html`
+        : artCode
+          ? `https://data.eastmoney.com/notices/detail/${artCode}.html`
+          : "",
+    infocode: artCode,
+    kind: classifyEvidenceText(`${title} ${(item?.columns || []).map((column) => column.column_name).join(" ")}`),
+    date: dateOnly(item?.notice_date || item?.display_time || item?.sort_date),
+    columns: item?.columns || []
+  };
+}
+
 async function fetchEastmoneyNoticePage(symbol) {
   const code = normalizeStockCode(symbol);
   if (!code) throw new Error("需要股票代码");
   const url = buildEastmoneyNoticeUrl(code);
-  const html = await fetchText(url, {
-    referer: "https://data.eastmoney.com/",
-    accept: "text/html,application/xhtml+xml"
-  });
-
-  const stockInfoMatch = html.match(/var\s+stockInfo\s*=\s*(\{[\s\S]*?\});/);
   let stockInfo = {};
   try {
+    const html = await fetchText(url, {
+      referer: "https://data.eastmoney.com/",
+      accept: "text/html,application/xhtml+xml"
+    });
+    const stockInfoMatch = html.match(/var\s+stockInfo\s*=\s*(\{[\s\S]*?\});/);
     stockInfo = stockInfoMatch ? JSON.parse(stockInfoMatch[1]) : {};
   } catch {
     stockInfo = {};
+  }
+
+  const apiUrl = `https://np-anotice-stock.eastmoney.com/api/security/ann?${new URLSearchParams({
+    ann_type: "A",
+    client_source: "web",
+    stock_list: code,
+    page_index: "1",
+    page_size: "40"
+  }).toString()}`;
+  const payload = await fetchJson(apiUrl, {
+    referer: url,
+    headers: {
+      Origin: "https://data.eastmoney.com"
+    }
+  });
+  const rows = payload?.data?.list || [];
+  if (!Array.isArray(rows)) {
+    throw new Error("东方财富公告列表返回格式无法解析");
+  }
+
+  if (!stockInfo.name) {
+    const codeInfo = rows[0]?.codes?.[0] || {};
+    stockInfo = {
+      code,
+      name: codeInfo.short_name || "",
+      hycode: "",
+      hyname: "",
+      market: codeInfo.market_code || "",
+      type: "",
+      hqCode: codeInfo.market_code ? `${codeInfo.market_code}.${code}` : code,
+      marketCode: codeInfo.ann_type || ""
+    };
   }
 
   return {
     source: "eastmoney",
     url,
-    pageTitle: pickTitleFromHtml(html),
+    apiUrl,
+    pageTitle: `${stockInfo.name || code}公告列表`,
     stockInfo,
-    notices: pickDetailLinks(html).slice(0, 40)
+    notices: rows.map(normalizeEastmoneyAnnItem).filter((item) => item.title && item.infocode)
   };
 }
 
 async function fetchEastmoneyNoticeDetail(item) {
-  const html = await fetchText(item.url, {
-    referer: "https://data.eastmoney.com/",
-    accept: "text/html,application/xhtml+xml"
-  });
-
-  const title = pickTitleFromHtml(html) || item.title;
-  const stockInfoMatch = html.match(/var\s+stockInfo\s*=\s*(\{[\s\S]*?\});/);
-  let stockInfo = {};
-  try {
-    stockInfo = stockInfoMatch ? JSON.parse(stockInfoMatch[1]) : {};
-  } catch {
-    stockInfo = {};
-  }
-
-  const pText = [];
-  for (const match of html.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi)) {
-    const text = stripHtml(match[1]);
-    if (text && text.length >= 6) pText.push(text);
-  }
-  const summary = pText.slice(0, 18).join(" ");
-
   let body = null;
   if (item.infocode) {
     try {
-      const apiUrl = `https://data.eastmoney.com/api/content/ann/rich?${new URLSearchParams({
-        infoCode: item.infocode,
-        type: "3"
+      const apiUrl = `https://np-cnotice-stock.eastmoney.com/api/content/ann?${new URLSearchParams({
+        art_code: item.infocode,
+        client_source: "web",
+        page_index: "1"
       }).toString()}`;
-      const apiText = await fetchText(apiUrl, {
-        referer: item.url,
-        accept: "application/json, text/plain, */*"
+      const payload = await fetchJson(apiUrl, {
+        referer: item.url || "https://data.eastmoney.com/",
+        headers: {
+          Origin: "https://data.eastmoney.com"
+        }
       });
-      let payload = null;
-      try {
-        payload = JSON.parse(apiText);
-      } catch {
-        payload = extractJsonpPayload(apiText);
-      }
-      const post = payload?.data?.post || payload?.post || payload?.data || payload || {};
+      const post = payload?.data || {};
       body = {
-        title: stripHtml(post.post_title || post.title || ""),
-        abstract: stripHtml(post.post_abstract || post.abstract || ""),
-        content: stripHtml(post.post_content || post.content || "")
+        title: stripHtml(post.notice_title || ""),
+        abstract: "",
+        content: stripHtml(post.notice_content || ""),
+        attachUrl: post.attach_url_web || post.attach_url || ""
       };
     } catch {
       body = null;
     }
   }
 
-  const chunk = body?.abstract || body?.content || summary || title;
+  if (!body) {
+    try {
+      const html = await fetchText(item.url, {
+        referer: "https://data.eastmoney.com/",
+        accept: "text/html,application/xhtml+xml"
+      });
+      const pText = [];
+      for (const match of html.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi)) {
+        const text = stripHtml(match[1]);
+        if (text && text.length >= 6) pText.push(text);
+      }
+      body = {
+        title: pickTitleFromHtml(html) || item.title,
+        abstract: "",
+        content: pText.slice(0, 18).join(" ")
+      };
+    } catch {
+      body = null;
+    }
+  }
+
+  const title = body?.title || item.title;
+  const chunk = body?.abstract || body?.content || title;
   return {
     source: "eastmoney",
     kind: classifyEvidenceText(`${item.kind || ""} ${title} ${chunk}`),
     date: item.date || extractDateFromText(title),
     title,
     url: item.url,
-    chunk,
-    stockInfo,
+    chunk: chunk.slice(0, 1800),
     infocode: item.infocode,
     body
   };
