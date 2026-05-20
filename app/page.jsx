@@ -17,6 +17,15 @@ const initialContext = {
   risk_profile: ""
 };
 
+const klinePeriods = [
+  ["monthly", "monthly", "月K", 120],
+  ["weekly", "weekly", "周K", 156],
+  ["daily", "daily", "日K", 240],
+  ["hour60", "60m", "60分钟", 240],
+  ["minute15", "15m", "15分钟", 240],
+  ["minute5", "5m", "5分钟", 240]
+];
+
 function safeLoad() {
   if (typeof window === "undefined") {
     return { messages: [], mode: "chat", context: initialContext };
@@ -112,14 +121,36 @@ export default function HomePage() {
     const symbol = (symbolOverride || context.symbol).trim();
     if (!symbol) return;
 
-    setKlineStatus("正在读取 K 线...");
+    setKlineStatus("正在读取多周期 K 线...");
     try {
-      const [daily, minute15] = await Promise.all([
-        fetchKline(symbol, "daily", 160),
-        fetchKline(symbol, "15m", 160)
-      ]);
-      setKline({ daily, minute15 });
-      setKlineStatus(`日K ${daily.bars.length} 条 · 15m ${minute15.bars.length} 条`);
+      const entries = await Promise.all(
+        klinePeriods.map(async ([key, period, label, limit]) => {
+          try {
+            const data = await fetchKline(symbol, period, limit);
+            return [key, data, null, label];
+          } catch (error) {
+            return [key, null, error.message, label];
+          }
+        })
+      );
+      const nextKline = {};
+      const errors = [];
+      for (const [key, data, error, label] of entries) {
+        if (data) {
+          nextKline[key] = data;
+        } else {
+          errors.push(`${label}失败`);
+        }
+      }
+      if (!Object.keys(nextKline).length) {
+        throw new Error(errors.join(" · ") || "K 线获取失败");
+      }
+      setKline(nextKline);
+      const loaded = klinePeriods
+        .filter(([key]) => nextKline[key])
+        .map(([key, , label]) => `${label}${nextKline[key].bars.length}`)
+        .join(" · ");
+      setKlineStatus(errors.length ? `${loaded} · ${errors.join(" · ")}` : loaded);
     } catch (error) {
       setKline(null);
       setKlineStatus(error.message);
@@ -187,9 +218,11 @@ export default function HomePage() {
       }
       if (data.klines) {
         setKline(data.klines);
-        const dailyCount = data.klines.daily?.bars?.length || 0;
-        const minuteCount = data.klines.minute15?.bars?.length || 0;
-        setKlineStatus(`已随对话更新 K 线：日K ${dailyCount} 条 · 15m ${minuteCount} 条`);
+        const loaded = klinePeriods
+          .filter(([key]) => data.klines[key])
+          .map(([key, , label]) => `${label}${data.klines[key].bars?.length || 0}`)
+          .join(" · ");
+        setKlineStatus(`已随对话更新 K 线：${loaded || "无可用周期"}`);
       } else if (data.klineError) {
         setKlineStatus(data.klineError);
       }
@@ -392,42 +425,31 @@ export default function HomePage() {
           <div className="quote-top">
             <div>
               <div className="quote-title">历史 K 线</div>
-              <div className="quote-note">数据源：东方财富公开 K 线。当前读取日 K 与 15 分钟 K。</div>
+              <div className="quote-note">数据源：东方财富公开 K 线。读取月K、周K、日K、60分钟、15分钟与5分钟。</div>
             </div>
             <button className="quote-button" type="button" onClick={() => refreshKline()} disabled={!context.symbol}>
               刷新 K 线
             </button>
           </div>
-          {kline?.daily?.summary ? (
-            <div className="kline-summary">
-              <div>
-                <span className="metric-label">日K收盘</span>
-                <span className="metric-value">{kline.daily.summary.last?.close ?? "--"}</span>
-              </div>
-              <div>
-                <span className="metric-label">MA5 / MA20</span>
-                <span className="metric-value small">
-                  {kline.daily.summary.ma5 ?? "--"} / {kline.daily.summary.ma20 ?? "--"}
-                </span>
-              </div>
-              <div>
-                <span className="metric-label">20日高低</span>
-                <span className="metric-value small">
-                  {kline.daily.summary.high20 ?? "--"} / {kline.daily.summary.low20 ?? "--"}
-                </span>
-              </div>
+          {kline && Object.keys(kline).length ? (
+            <div className="multi-kline-grid">
+              {klinePeriods.map(([key, , label]) => {
+                const summary = kline[key]?.summary;
+                if (!summary) return null;
+                return (
+                  <div className="kline-tile" key={key}>
+                    <span className="metric-label">{label}</span>
+                    <span className="metric-value">{summary.last?.close ?? "--"}</span>
+                    <span>MA5 / MA20：{summary.ma5 ?? "--"} / {summary.ma20 ?? "--"}</span>
+                    <span>高低：{summary.high20 ?? "--"} / {summary.low20 ?? "--"}</span>
+                    <span>{summary.trend}</span>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div className="quote-empty">还没有 K 线。填写代码后点“刷新 K 线”。</div>
           )}
-          {kline?.minute15?.summary ? (
-            <div className="quote-grid">
-              <span>15m 最新 {kline.minute15.summary.last?.close ?? "--"}</span>
-              <span>15m MA5 {kline.minute15.summary.ma5 ?? "--"}</span>
-              <span>15m MA20 {kline.minute15.summary.ma20 ?? "--"}</span>
-              <span>15m 趋势 {kline.minute15.summary.trend}</span>
-            </div>
-          ) : null}
           {klineStatus ? <div className="quote-status">{klineStatus}</div> : null}
         </div>
         <div className="quote-card">

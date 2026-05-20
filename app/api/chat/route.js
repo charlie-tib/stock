@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { callDeepSeek } from "../../lib/deepseek";
-import { fetchEastmoneyKline, klineToPrompt } from "../../lib/eastmoneyKline";
+import { fetchMultiScaleKlines, multiScaleKlinesToPrompt } from "../../lib/eastmoneyKline";
 import { collectFundamentalPackage } from "../../lib/fundamentalPipeline";
 import {
   fundamentalReportToPrompt,
@@ -47,10 +47,7 @@ function buildMessages(payload) {
       : "market_quote: not requested";
   const technicalBlock = technicalReportToPrompt(payload.technicalReport);
   const klineBlock = payload.klines
-    ? [
-        payload.klines.daily ? klineToPrompt(payload.klines.daily, 12) : "kline_daily: unavailable",
-        payload.klines.minute15 ? klineToPrompt(payload.klines.minute15, 12) : "kline_15m: unavailable"
-      ].join("\n\n")
+    ? multiScaleKlinesToPrompt(payload.klines)
     : payload.klineError
       ? `kline_error: ${payload.klineError}`
       : "kline: not requested";
@@ -87,26 +84,9 @@ export async function POST(request) {
     } catch (error) {
       quoteError = error.message || "行情获取失败";
     }
-    try {
-      klines.daily = await fetchEastmoneyKline({
-        symbol: payload.symbol,
-        period: "daily",
-        limit: 160,
-        adjust: "qfq"
-      });
-    } catch (error) {
-      klineError = [klineError, `daily: ${error.message || "获取失败"}`].filter(Boolean).join("; ");
-    }
-    try {
-      klines.minute15 = await fetchEastmoneyKline({
-        symbol: payload.symbol,
-        period: "15m",
-        limit: 160,
-        adjust: "none"
-      });
-    } catch (error) {
-      klineError = [klineError, `15m: ${error.message || "获取失败"}`].filter(Boolean).join("; ");
-    }
+    const multiScale = await fetchMultiScaleKlines(payload.symbol);
+    Object.assign(klines, multiScale.klines);
+    klineError = multiScale.errors.join("; ") || null;
   }
 
   let technicalReport = null;

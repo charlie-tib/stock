@@ -7,14 +7,27 @@ const PERIOD_MAP = {
   daily: "101",
   day: "101",
   d: "101",
+  week: "102",
   weekly: "102",
+  w: "102",
+  month: "103",
   monthly: "103",
+  m: "103",
   "1m": "1",
   "5m": "5",
   "15m": "15",
   "30m": "30",
   "60m": "60"
 };
+
+export const MULTI_SCALE_KLINE_CONFIG = [
+  { key: "monthly", period: "monthly", label: "月K", limit: 120, adjust: "qfq", promptBars: 24 },
+  { key: "weekly", period: "weekly", label: "周K", limit: 156, adjust: "qfq", promptBars: 30 },
+  { key: "daily", period: "daily", label: "日K", limit: 240, adjust: "qfq", promptBars: 45 },
+  { key: "hour60", period: "60m", label: "60分钟", limit: 240, adjust: "none", promptBars: 45 },
+  { key: "minute15", period: "15m", label: "15分钟", limit: 240, adjust: "none", promptBars: 50 },
+  { key: "minute5", period: "5m", label: "5分钟", limit: 240, adjust: "none", promptBars: 50 }
+];
 
 function cleanSymbol(symbol) {
   return String(symbol || "").trim().replace(/\s+/g, "");
@@ -192,6 +205,40 @@ export async function fetchEastmoneyKline({ symbol, period = "daily", limit = 12
   };
 }
 
+export async function fetchMultiScaleKlines(symbol, config = MULTI_SCALE_KLINE_CONFIG) {
+  const entries = await Promise.all(
+    config.map(async (item) => {
+      try {
+        const data = await fetchEastmoneyKline({
+          symbol,
+          period: item.period,
+          limit: item.limit,
+          adjust: item.adjust
+        });
+        return [item.key, data, null];
+      } catch (error) {
+        return [item.key, null, error.message || `${item.label} 获取失败`];
+      }
+    })
+  );
+
+  const klines = {};
+  const errors = [];
+  for (const [key, data, error] of entries) {
+    if (data) {
+      klines[key] = data;
+    } else {
+      errors.push(`${key}: ${error}`);
+    }
+  }
+
+  return {
+    klines,
+    errors,
+    config
+  };
+}
+
 export function klineToPrompt(dataset, maxBars = 20) {
   if (!dataset?.bars?.length) return "kline: unavailable";
   const summary = dataset.summary || summarizeKlines(dataset);
@@ -211,4 +258,13 @@ export function klineToPrompt(dataset, maxBars = 20) {
     `summary: last_close=${summary?.last?.close ?? ""}, ma5=${summary?.ma5 ?? ""}, ma10=${summary?.ma10 ?? ""}, ma20=${summary?.ma20 ?? ""}, ma60=${summary?.ma60 ?? ""}, high20=${summary?.high20 ?? ""}, low20=${summary?.low20 ?? ""}, trend=${summary?.trend ?? ""}`,
     `recent_bars:\n${bars}`
   ].join("\n");
+}
+
+export function multiScaleKlinesToPrompt(klines = {}, config = MULTI_SCALE_KLINE_CONFIG) {
+  const blocks = [];
+  for (const item of config) {
+    const dataset = klines[item.key];
+    blocks.push(dataset ? klineToPrompt(dataset, item.promptBars) : `kline_${item.period}: unavailable`);
+  }
+  return blocks.join("\n\n");
 }
