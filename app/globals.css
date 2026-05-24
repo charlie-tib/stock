@@ -315,7 +315,28 @@ textarea {
   min-width: 0;
 }
 
+.market-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
 .kline-tile {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px;
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.market-tile {
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -587,7 +608,8 @@ textarea {
   .quote-grid,
   .book,
   .kline-summary,
-  .multi-kline-grid {
+  .multi-kline-grid,
+  .market-grid {
     grid-template-columns: 1fr 1fr;
   }
 

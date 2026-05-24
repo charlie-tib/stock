@@ -9,6 +9,8 @@ import {
   runFundamentalAgent,
   shouldRunFundamentalAgent
 } from "../../lib/fundamentalAgent";
+import { collectMarketEnvironment, marketEnvironmentToPrompt } from "../../lib/marketEnvironment";
+import { marketReportToPrompt, runMarketAgent, shouldRunMarketAgent } from "../../lib/marketAgent";
 import {
   runTechnicalAgent,
   shouldRunTechnicalAgent,
@@ -52,10 +54,16 @@ function buildMessages(payload) {
       ? `kline_error: ${payload.klineError}`
       : "kline: not requested";
   const fundamentalBlock = fundamentalReportToPrompt(payload.fundamentalReport);
+  const marketEnvironmentBlock = payload.marketEnvironment
+    ? marketEnvironmentToPrompt(payload.marketEnvironment)
+    : payload.marketError
+      ? `market_environment_error: ${payload.marketError}`
+      : "market_environment: not requested";
+  const marketBlock = marketReportToPrompt(payload.marketReport);
 
   messages.push({
     role: "system",
-    content: `Structured context:\n${context}\n\n${quoteBlock}\n\n${klineBlock}\n\n${technicalBlock}\n\n${fundamentalBlock}`
+    content: `Structured context:\n${context}\n\n${marketEnvironmentBlock}\n\n${marketBlock}\n\n${quoteBlock}\n\n${klineBlock}\n\n${technicalBlock}\n\n${fundamentalBlock}`
   });
   messages.push({ role: "user", content: String(payload.user_question || "") });
   return messages;
@@ -78,6 +86,15 @@ export async function POST(request) {
   let quoteError = null;
   const klines = {};
   let klineError = null;
+  let marketEnvironment = null;
+  let marketError = null;
+
+  try {
+    marketEnvironment = await collectMarketEnvironment();
+  } catch (error) {
+    marketError = error.message || "市场环境获取失败";
+  }
+
   if (payload.symbol) {
     try {
       quote = await fetchTencentQuote(payload.symbol);
@@ -87,6 +104,22 @@ export async function POST(request) {
     const multiScale = await fetchMultiScaleKlines(payload.symbol);
     Object.assign(klines, multiScale.klines);
     klineError = multiScale.errors.join("; ") || null;
+  }
+
+  let marketReport = null;
+  if (shouldRunMarketAgent(payload, question)) {
+    try {
+      marketReport = await runMarketAgent({
+        payload,
+        question,
+        marketEnvironment
+      });
+    } catch (error) {
+      marketReport = {
+        name: "market",
+        error: error.message || "市场环境 Agent 调用失败"
+      };
+    }
   }
 
   let technicalReport = null;
@@ -132,6 +165,9 @@ export async function POST(request) {
         quoteError,
         klines,
         klineError,
+        marketEnvironment,
+        marketError,
+        marketReport,
         technicalReport,
         fundamentalReport
       }),
@@ -143,7 +179,10 @@ export async function POST(request) {
       quoteError,
       klines,
       klineError,
+      marketEnvironment,
+      marketError,
       agents: {
+        market: marketReport,
         technical: technicalReport,
         fundamental: fundamentalReport
       },

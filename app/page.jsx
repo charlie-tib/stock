@@ -55,6 +55,9 @@ export default function HomePage() {
   const [quote, setQuote] = useState(null);
   const [quoteStatus, setQuoteStatus] = useState("");
   const [quoteLoading, setQuoteLoading] = useState(false);
+  const [market, setMarket] = useState(null);
+  const [marketStatus, setMarketStatus] = useState("");
+  const [marketLoading, setMarketLoading] = useState(false);
   const [kline, setKline] = useState(null);
   const [klineStatus, setKlineStatus] = useState("");
   const [fundamentalStatus, setFundamentalStatus] = useState("");
@@ -102,6 +105,30 @@ export default function HomePage() {
       setQuoteStatus(error.message);
     } finally {
       setQuoteLoading(false);
+    }
+  }
+
+  async function refreshMarket() {
+    if (marketLoading) return;
+    setMarketLoading(true);
+    setMarketStatus("正在读取 A 股市场环境...");
+    try {
+      const response = await fetch("/api/market", {
+        cache: "no-store"
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "市场环境获取失败");
+      }
+      setMarket(data.marketEnvironment || null);
+      const count = data.marketEnvironment?.indexes?.length || 0;
+      const style = data.marketEnvironment?.breadth?.style_bias || "unknown";
+      setMarketStatus(`已读取 ${count} 个宽基指数 · 风格 ${style}`);
+    } catch (error) {
+      setMarket(null);
+      setMarketStatus(error.message);
+    } finally {
+      setMarketLoading(false);
     }
   }
 
@@ -225,6 +252,12 @@ export default function HomePage() {
         setKlineStatus(`已随对话更新 K 线：${loaded || "无可用周期"}`);
       } else if (data.klineError) {
         setKlineStatus(data.klineError);
+      }
+      if (data.marketEnvironment) {
+        setMarket(data.marketEnvironment);
+        setMarketStatus(`已随对话更新市场环境 · ${data.marketEnvironment.breadth?.style_bias || "unknown"}`);
+      } else if (data.marketError) {
+        setMarketStatus(data.marketError);
       }
       setAgentStatus(data.agents || null);
       setStatus("已完成");
@@ -424,6 +457,42 @@ export default function HomePage() {
         <div className="quote-card">
           <div className="quote-top">
             <div>
+              <div className="quote-title">A 股大盘环境</div>
+              <div className="quote-note">跟踪上证、沪深300、创业板、中证500/1000/2000、国证2000，避免只看上证失真。</div>
+            </div>
+            <button className="quote-button" type="button" onClick={refreshMarket} disabled={marketLoading}>
+              {marketLoading ? "读取中" : "刷新大盘"}
+            </button>
+          </div>
+          {market?.indexes?.length ? (
+            <div className="market-grid">
+              {market.indexes.map((item) => (
+                <div className="market-tile" key={item.key}>
+                  <span className="metric-label">{item.name}</span>
+                  <span className={Number(item.latest?.change_percent) >= 0 ? "metric-value up" : "metric-value down"}>
+                    {item.latest?.change_percent ?? "--"}%
+                  </span>
+                  <span>日线：{item.trends?.daily || "unknown"}</span>
+                  <span>周线：{item.trends?.weekly || "unknown"}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="quote-empty">还没有大盘环境。点击“刷新大盘”读取宽基指数。</div>
+          )}
+          {market?.breadth ? (
+            <div className="quote-grid">
+              <span>上涨指数 {market.breadth.rising}/{market.breadth.total}</span>
+              <span>大盘平均 {market.breadth.large_cap_avg_change ?? "--"}%</span>
+              <span>小盘平均 {market.breadth.small_cap_avg_change ?? "--"}%</span>
+              <span>风格 {market.breadth.style_bias}</span>
+            </div>
+          ) : null}
+          {marketStatus ? <div className="quote-status">{marketStatus}</div> : null}
+        </div>
+        <div className="quote-card">
+          <div className="quote-top">
+            <div>
               <div className="quote-title">历史 K 线</div>
               <div className="quote-note">数据源：东方财富公开 K 线。读取月K、周K、日K、60分钟、15分钟与5分钟。</div>
             </div>
@@ -535,6 +604,21 @@ export default function HomePage() {
               <small>
                 {agentStatus.technical.knowledge.map((item) => item.title).join(" / ")}
               </small>
+            ) : null}
+          </div>
+        ) : null}
+        {agentStatus?.market ? (
+          <div className="agent-strip">
+            <div>
+              <b>市场环境 Agent</b>
+              <span>
+                {agentStatus.market.error
+                  ? agentStatus.market.error
+                  : `已调用 · ${agentStatus.market.regime || "unknown"} · ${agentStatus.market.styleBias || "unknown"}`}
+              </span>
+            </div>
+            {!agentStatus.market.error && agentStatus.market.structured?.executive_summary ? (
+              <small>{agentStatus.market.structured.executive_summary}</small>
             ) : null}
           </div>
         ) : null}
