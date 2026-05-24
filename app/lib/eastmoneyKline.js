@@ -426,3 +426,36 @@ export function multiScaleKlinesToPrompt(klines = {}, config = MULTI_SCALE_KLINE
   }
   return blocks.join("\n\n");
 }
+
+export function technicalSnapshotToPrompt(klines = {}, config = MULTI_SCALE_KLINE_CONFIG) {
+  const rows = [];
+  for (const item of config) {
+    const dataset = klines[item.key];
+    const summary = dataset?.summary || (dataset ? summarizeKlines(dataset) : null);
+    if (!summary) {
+      rows.push(`- ${item.label}: unavailable`);
+      continue;
+    }
+    const indicators = summary.indicators || {};
+    rows.push(
+      [
+        `- ${item.label} (${item.key})`,
+        `close=${summary.last?.close ?? ""}`,
+        `ma5=${summary.ma5 ?? ""}`,
+        `ma20=${summary.ma20 ?? ""}`,
+        `ma60=${summary.ma60 ?? ""}`,
+        `trend=${summary.trend ?? ""}`,
+        `rsi14=${indicators.rsi?.rsi14 ?? ""}`,
+        `rsi_signal=${indicators.rsi?.signal ?? ""}`,
+        `kdj=${indicators.kdj ? `${indicators.kdj.k}/${indicators.kdj.d}/${indicators.kdj.j}` : ""}`,
+        `kdj_signal=${indicators.kdj?.signal ?? ""}`,
+        `boll=${indicators.boll ? `${indicators.boll.lower}/${indicators.boll.mid}/${indicators.boll.upper}` : ""}`,
+        `boll_position=${indicators.boll?.position ?? ""}`,
+        `macd=${indicators.macd ? `${indicators.macd.dif}/${indicators.macd.dea}/${indicators.macd.histogram}` : ""}`,
+        `macd_signal=${indicators.macd?.signal ?? ""}`,
+        `macd_momentum=${indicators.macd?.momentum ?? ""}`
+      ].join(" | ")
+    );
+  }
+  return ["technical_snapshot:", "contains_kline_and_indicators: true", rows.join("\n")].join("\n");
+}

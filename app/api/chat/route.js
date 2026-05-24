@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { callDeepSeek } from "../../lib/deepseek";
-import { fetchMultiScaleKlines, multiScaleKlinesToPrompt } from "../../lib/eastmoneyKline";
+import { fetchMultiScaleKlines, multiScaleKlinesToPrompt, technicalSnapshotToPrompt } from "../../lib/eastmoneyKline";
 import { collectFundamentalPackage } from "../../lib/fundamentalPipeline";
 import {
   fundamentalReportToPrompt,
@@ -34,7 +34,7 @@ function buildMessages(payload) {
     {
       role: "system",
       content:
-        "You are the master controller of a stock decision assistant. Be concise, structured, and explicit about uncertainty. Never invent market facts. If market data is missing, say so and ask for the missing input. Do not give guaranteed investment outcomes."
+        "You are the master controller of a stock decision assistant. Be concise, structured, and explicit about uncertainty. Never invent market facts. If technical_snapshot says contains_kline_and_indicators=true, then K-line data and MA/RSI/KDJ/BOLL/MACD indicators are available and you must not say they are missing. Use the technical_snapshot and technical_agent report before discussing technicals. Do not give guaranteed investment outcomes."
     }
   ];
 
@@ -55,6 +55,11 @@ function buildMessages(payload) {
     : payload.klineError
       ? `kline_error: ${payload.klineError}`
       : "kline: not requested";
+  const technicalSnapshotBlock = payload.klines
+    ? technicalSnapshotToPrompt(payload.klines)
+    : payload.klineError
+      ? `technical_snapshot_error: ${payload.klineError}`
+      : "technical_snapshot: not requested";
   const fundamentalBlock = fundamentalReportToPrompt(payload.fundamentalReport);
   const marketEnvironmentBlock = payload.marketEnvironment
     ? marketEnvironmentToPrompt(payload.marketEnvironment)
@@ -71,7 +76,7 @@ function buildMessages(payload) {
 
   messages.push({
     role: "system",
-    content: `Structured context:\n${context}\n\n${marketEnvironmentBlock}\n\n${marketBlock}\n\n${hotSectorBlock}\n\n${hotSectorReportBlock}\n\n${quoteBlock}\n\n${klineBlock}\n\n${technicalBlock}\n\n${fundamentalBlock}`
+    content: `Structured context:\n${context}\n\n${technicalSnapshotBlock}\n\n${technicalBlock}\n\n${quoteBlock}\n\n${marketEnvironmentBlock}\n\n${marketBlock}\n\n${hotSectorBlock}\n\n${hotSectorReportBlock}\n\n${klineBlock}\n\n${fundamentalBlock}`
   });
   messages.push({ role: "user", content: String(payload.user_question || "") });
   return messages;
