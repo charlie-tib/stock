@@ -38,6 +38,7 @@ export function normalizeEastmoneySecid(symbol) {
   if (!raw) return "";
   const lower = raw.toLowerCase();
   if (/^[012]\.\d{6}$/.test(lower)) return lower;
+  if (/^90\.bk\d{4}$/i.test(raw)) return raw.toUpperCase();
   const code = lower.replace(/^(sh|sz|bj)/, "");
 
   if (!/^\d{6}$/.test(code)) {

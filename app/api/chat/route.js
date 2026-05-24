@@ -9,6 +9,8 @@ import {
   runFundamentalAgent,
   shouldRunFundamentalAgent
 } from "../../lib/fundamentalAgent";
+import { collectHotSectors, hotSectorsToPrompt } from "../../lib/hotSector";
+import { hotSectorReportToPrompt, runHotSectorAgent, shouldRunHotSectorAgent } from "../../lib/hotSectorAgent";
 import { collectMarketEnvironment, marketEnvironmentToPrompt } from "../../lib/marketEnvironment";
 import { marketReportToPrompt, runMarketAgent, shouldRunMarketAgent } from "../../lib/marketAgent";
 import {
@@ -60,10 +62,16 @@ function buildMessages(payload) {
       ? `market_environment_error: ${payload.marketError}`
       : "market_environment: not requested";
   const marketBlock = marketReportToPrompt(payload.marketReport);
+  const hotSectorBlock = payload.hotSectors
+    ? hotSectorsToPrompt(payload.hotSectors, payload.marketEnvironment)
+    : payload.hotSectorError
+      ? `hot_sectors_error: ${payload.hotSectorError}`
+      : "hot_sectors: not requested";
+  const hotSectorReportBlock = hotSectorReportToPrompt(payload.hotSectorReport);
 
   messages.push({
     role: "system",
-    content: `Structured context:\n${context}\n\n${marketEnvironmentBlock}\n\n${marketBlock}\n\n${quoteBlock}\n\n${klineBlock}\n\n${technicalBlock}\n\n${fundamentalBlock}`
+    content: `Structured context:\n${context}\n\n${marketEnvironmentBlock}\n\n${marketBlock}\n\n${hotSectorBlock}\n\n${hotSectorReportBlock}\n\n${quoteBlock}\n\n${klineBlock}\n\n${technicalBlock}\n\n${fundamentalBlock}`
   });
   messages.push({ role: "user", content: String(payload.user_question || "") });
   return messages;
@@ -88,11 +96,19 @@ export async function POST(request) {
   let klineError = null;
   let marketEnvironment = null;
   let marketError = null;
+  let hotSectors = null;
+  let hotSectorError = null;
 
   try {
     marketEnvironment = await collectMarketEnvironment();
   } catch (error) {
     marketError = error.message || "市场环境获取失败";
+  }
+
+  try {
+    hotSectors = await collectHotSectors();
+  } catch (error) {
+    hotSectorError = error.message || "热点板块获取失败";
   }
 
   if (payload.symbol) {
@@ -118,6 +134,23 @@ export async function POST(request) {
       marketReport = {
         name: "market",
         error: error.message || "市场环境 Agent 调用失败"
+      };
+    }
+  }
+
+  let hotSectorReport = null;
+  if (shouldRunHotSectorAgent(payload, question)) {
+    try {
+      hotSectorReport = await runHotSectorAgent({
+        payload,
+        question,
+        hotSectors,
+        marketEnvironment
+      });
+    } catch (error) {
+      hotSectorReport = {
+        name: "hot_sector",
+        error: error.message || "热点板块 Agent 调用失败"
       };
     }
   }
@@ -168,6 +201,9 @@ export async function POST(request) {
         marketEnvironment,
         marketError,
         marketReport,
+        hotSectors,
+        hotSectorError,
+        hotSectorReport,
         technicalReport,
         fundamentalReport
       }),
@@ -181,8 +217,11 @@ export async function POST(request) {
       klineError,
       marketEnvironment,
       marketError,
+      hotSectors,
+      hotSectorError,
       agents: {
         market: marketReport,
+        hotSector: hotSectorReport,
         technical: technicalReport,
         fundamental: fundamentalReport
       },

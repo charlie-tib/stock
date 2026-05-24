@@ -58,6 +58,10 @@ export default function HomePage() {
   const [market, setMarket] = useState(null);
   const [marketStatus, setMarketStatus] = useState("");
   const [marketLoading, setMarketLoading] = useState(false);
+  const [hotSectors, setHotSectors] = useState(null);
+  const [hotSectorReport, setHotSectorReport] = useState(null);
+  const [hotSectorStatus, setHotSectorStatus] = useState("");
+  const [hotSectorLoading, setHotSectorLoading] = useState(false);
   const [kline, setKline] = useState(null);
   const [klineStatus, setKlineStatus] = useState("");
   const [fundamentalStatus, setFundamentalStatus] = useState("");
@@ -129,6 +133,44 @@ export default function HomePage() {
       setMarketStatus(error.message);
     } finally {
       setMarketLoading(false);
+    }
+  }
+
+  async function refreshHotSectors({ analyze = false } = {}) {
+    if (hotSectorLoading) return;
+    setHotSectorLoading(true);
+    setHotSectorStatus(analyze ? "正在分析热点板块..." : "正在读取热点板块...");
+    try {
+      const response = await fetch("/api/hot-sector", {
+        method: analyze ? "POST" : "GET",
+        headers: analyze ? { "Content-Type": "application/json" } : undefined,
+        body: analyze
+          ? JSON.stringify({
+              symbol: context.symbol,
+              user_question: question.trim() || "请分析今天 A 股最热门板块及主线潜力"
+            })
+          : undefined,
+        cache: "no-store"
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "热点板块获取失败");
+      }
+      setHotSectors(data.hotSectors || null);
+      if (data.marketEnvironment) setMarket(data.marketEnvironment);
+      if (data.report) setHotSectorReport(data.report);
+      const leader = data.hotSectors?.leader;
+      setHotSectorStatus(
+        leader
+          ? `${leader.name} 领涨 · ${leader.changePercent ?? "--"}% · 主线分析${data.report ? "完成" : "待触发"}`
+          : "已读取热点板块"
+      );
+    } catch (error) {
+      setHotSectors(null);
+      setHotSectorReport(null);
+      setHotSectorStatus(error.message);
+    } finally {
+      setHotSectorLoading(false);
     }
   }
 
@@ -258,6 +300,15 @@ export default function HomePage() {
         setMarketStatus(`已随对话更新市场环境 · ${data.marketEnvironment.breadth?.style_bias || "unknown"}`);
       } else if (data.marketError) {
         setMarketStatus(data.marketError);
+      }
+      if (data.hotSectors) {
+        setHotSectors(data.hotSectors);
+        setHotSectorStatus(`已随对话更新热点板块 · ${data.hotSectors.leader?.name || "unknown"}`);
+      } else if (data.hotSectorError) {
+        setHotSectorStatus(data.hotSectorError);
+      }
+      if (data.agents?.hotSector) {
+        setHotSectorReport(data.agents.hotSector);
       }
       setAgentStatus(data.agents || null);
       setStatus("已完成");
@@ -493,6 +544,63 @@ export default function HomePage() {
         <div className="quote-card">
           <div className="quote-top">
             <div>
+              <div className="quote-title">热点板块 / 主线潜力</div>
+              <div className="quote-note">读取行业与概念涨幅榜，结合板块走势、资金流和成分股扩散度判断情绪强度。</div>
+            </div>
+            <div className="button-row compact">
+              <button className="quote-button" type="button" onClick={() => refreshHotSectors()} disabled={hotSectorLoading}>
+                {hotSectorLoading ? "读取中" : "刷新热点"}
+              </button>
+              <button
+                className="quote-button"
+                type="button"
+                onClick={() => refreshHotSectors({ analyze: true })}
+                disabled={hotSectorLoading}
+              >
+                分析主线
+              </button>
+            </div>
+          </div>
+          {hotSectors?.sectors?.length ? (
+            <div className="hot-sector-list">
+              {hotSectors.sectors.slice(0, 5).map((sector) => (
+                <div className="hot-sector-row" key={sector.key}>
+                  <div>
+                    <b>{sector.name}</b>
+                    <span>{sector.universeLabel} · {sector.code}</span>
+                  </div>
+                  <div>
+                    <strong>{sector.changePercent ?? "--"}%</strong>
+                    <span>扩散 {sector.memberSummary?.rising ?? "--"}/{sector.memberSummary?.total ?? "--"}</span>
+                  </div>
+                  <small>
+                    龙头：{(sector.members || [])
+                      .slice(0, 3)
+                      .map((item) => `${item.name} ${item.changePercent ?? "--"}%`)
+                      .join(" / ") || "暂无"}
+                  </small>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="quote-empty">还没有热点板块。点击“刷新热点”读取当天最强行业和概念。</div>
+          )}
+          {hotSectorReport?.structured ? (
+            <div className="fundamental-preview">
+              <div className="quote-note">热点 Agent 结论</div>
+              <div className="quote-grid">
+                <span>情绪 {hotSectorReport.structured.market_emotion || "--"}</span>
+                <span>主线潜力 {hotSectorReport.structured.mainline_potential?.rating || "--"}</span>
+                <span>轮动风险 {hotSectorReport.structured.rotation_risk?.risk || "--"}</span>
+              </div>
+              <div className="quote-note">{hotSectorReport.structured.leader_sector?.summary || ""}</div>
+            </div>
+          ) : null}
+          {hotSectorStatus ? <div className="quote-status">{hotSectorStatus}</div> : null}
+        </div>
+        <div className="quote-card">
+          <div className="quote-top">
+            <div>
               <div className="quote-title">历史 K 线</div>
               <div className="quote-note">数据源：东方财富公开 K 线。读取月K、周K、日K、60分钟、15分钟与5分钟。</div>
             </div>
@@ -619,6 +727,21 @@ export default function HomePage() {
             </div>
             {!agentStatus.market.error && agentStatus.market.structured?.executive_summary ? (
               <small>{agentStatus.market.structured.executive_summary}</small>
+            ) : null}
+          </div>
+        ) : null}
+        {agentStatus?.hotSector ? (
+          <div className="agent-strip">
+            <div>
+              <b>热点板块 Agent</b>
+              <span>
+                {agentStatus.hotSector.error
+                  ? agentStatus.hotSector.error
+                  : `已调用 · ${agentStatus.hotSector.leader?.name || "unknown"} · ${agentStatus.hotSector.emotion || "unknown"}`}
+              </span>
+            </div>
+            {!agentStatus.hotSector.error && agentStatus.hotSector.structured?.mainline_potential?.reason ? (
+              <small>{agentStatus.hotSector.structured.mainline_potential.reason}</small>
             ) : null}
           </div>
         ) : null}

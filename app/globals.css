@@ -350,6 +350,52 @@ textarea {
   overflow-wrap: anywhere;
 }
 
+.hot-sector-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.hot-sector-row {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  align-items: start;
+}
+
+.hot-sector-row div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.hot-sector-row b {
+  font-size: 13px;
+}
+
+.hot-sector-row strong {
+  color: #c2410c;
+  font-size: 16px;
+  text-align: right;
+}
+
+.hot-sector-row span,
+.hot-sector-row small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.hot-sector-row small {
+  grid-column: 1 / -1;
+}
+
 .book {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -572,6 +618,11 @@ textarea {
 .button-row {
   display: flex;
   gap: 8px;
+}
+
+.button-row.compact {
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .send {
