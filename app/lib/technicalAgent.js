@@ -56,7 +56,7 @@ export async function runTechnicalAgent({ payload, question, quote, klines = {} 
     {
       role: "system",
       content:
-        "You are the multi-timeframe technical-analysis sub-agent in a stock decision assistant. Use only the provided market quote, K-line data, derived summaries, and retrieved technical-analysis notes. Do not invent indicators that were not provided. Read higher timeframes first, then lower timeframes. If timeframes conflict, explain the conflict and which horizon it matters for. Output a compact technical report for the master controller, not final trading advice."
+        "You are the multi-timeframe technical-analysis sub-agent in a stock decision assistant. Use only the provided market quote, K-line data, derived summaries, and retrieved technical-analysis notes. The summaries include MA, RSI, KDJ, BOLL, and MACD when enough bars are available. Do not invent indicators that were not provided. Read higher timeframes first, then lower timeframes. If timeframes conflict, explain the conflict and which horizon it matters for. Output a compact technical report for the master controller, not final trading advice."
     },
     {
       role: "system",
@@ -69,7 +69,7 @@ export async function runTechnicalAgent({ payload, question, quote, klines = {} 
         `symbol: ${payload.symbol || ""}`,
         `mode: ${payload.mode || "chat"}`,
         `time_horizon: ${payload.time_horizon || ""}`,
-        "Please provide a multi-timeframe technical read in Chinese with these sections: 1) 月K/周K long-term trend and major regime; 2) 日K/60分钟 swing setup; 3) 15分钟/5分钟 intraday rhythm; 4) support/resistance by timeframe; 5) volume-price confirmation; 6) bullish scenario; 7) bearish scenario; 8) what action fits long-term, swing, short-term, and intraday horizons; 9) invalidation signals and data limitations."
+        "Please provide a multi-timeframe technical read in Chinese with these sections: 1) 月K/周K long-term trend and major regime; 2) 日K/60分钟 swing setup; 3) 15分钟/5分钟 intraday rhythm; 4) indicator confirmation using RSI, KDJ, BOLL, and MACD by timeframe; 5) support/resistance by timeframe; 6) volume-price confirmation; 7) bullish scenario; 8) bearish scenario; 9) what action fits long-term, swing, short-term, and intraday horizons; 10) invalidation signals and data limitations."
       ].join("\n")
     }
   ];

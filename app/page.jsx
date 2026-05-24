@@ -619,6 +619,10 @@ export default function HomePage() {
                     <span className="metric-value">{summary.last?.close ?? "--"}</span>
                     <span>MA5 / MA20：{summary.ma5 ?? "--"} / {summary.ma20 ?? "--"}</span>
                     <span>高低：{summary.high20 ?? "--"} / {summary.low20 ?? "--"}</span>
+                    <span>RSI14：{summary.indicators?.rsi?.rsi14 ?? "--"}</span>
+                    <span>KDJ：{summary.indicators?.kdj?.signal || "--"}</span>
+                    <span>BOLL：{summary.indicators?.boll?.position || "--"}</span>
+                    <span>MACD：{summary.indicators?.macd?.signal || "--"}</span>
                     <span>{summary.trend}</span>
                   </div>
                 );

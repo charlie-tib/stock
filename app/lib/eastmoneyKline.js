@@ -85,6 +85,159 @@ function movingAverage(values, window) {
   return Number((sum / window).toFixed(3));
 }
 
+function round(value, digits = 3) {
+  return Number.isFinite(value) ? Number(value.toFixed(digits)) : null;
+}
+
+function emaSeries(values, period) {
+  if (!values.length) return [];
+  const alpha = 2 / (period + 1);
+  const result = [];
+  let previous = values[0];
+  for (const value of values) {
+    previous = result.length ? value * alpha + previous * (1 - alpha) : value;
+    result.push(previous);
+  }
+  return result;
+}
+
+function calculateRsi(closes, period = 14) {
+  if (closes.length <= period) return null;
+  let gains = 0;
+  let losses = 0;
+  for (let index = 1; index <= period; index += 1) {
+    const change = closes[index] - closes[index - 1];
+    if (change >= 0) gains += change;
+    else losses -= change;
+  }
+  let avgGain = gains / period;
+  let avgLoss = losses / period;
+  for (let index = period + 1; index < closes.length; index += 1) {
+    const change = closes[index] - closes[index - 1];
+    const gain = Math.max(change, 0);
+    const loss = Math.max(-change, 0);
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+  }
+  if (avgLoss === 0) return 100;
+  const rs = avgGain / avgLoss;
+  return round(100 - 100 / (1 + rs), 2);
+}
+
+function calculateMacd(closes) {
+  if (closes.length < 35) return null;
+  const ema12 = emaSeries(closes, 12);
+  const ema26 = emaSeries(closes, 26);
+  const dif = closes.map((_, index) => ema12[index] - ema26[index]);
+  const dea = emaSeries(dif, 9);
+  const histogram = dif.map((value, index) => (value - dea[index]) * 2);
+  const last = dif.length - 1;
+  const previous = dif.length - 2;
+  return {
+    dif: round(dif[last]),
+    dea: round(dea[last]),
+    histogram: round(histogram[last]),
+    previousHistogram: round(histogram[previous]),
+    signal:
+      histogram[last] > 0 && dif[last] > dea[last]
+        ? "bullish"
+        : histogram[last] < 0 && dif[last] < dea[last]
+          ? "bearish"
+          : "neutral",
+    momentum:
+      histogram[last] > histogram[previous]
+        ? "strengthening"
+        : histogram[last] < histogram[previous]
+          ? "weakening"
+          : "flat"
+  };
+}
+
+function calculateBoll(closes, period = 20, multiplier = 2) {
+  if (closes.length < period) return null;
+  const slice = closes.slice(-period);
+  const mid = slice.reduce((sum, value) => sum + value, 0) / period;
+  const variance = slice.reduce((sum, value) => sum + (value - mid) ** 2, 0) / period;
+  const sd = Math.sqrt(variance);
+  const upper = mid + multiplier * sd;
+  const lower = mid - multiplier * sd;
+  const close = closes[closes.length - 1];
+  return {
+    upper: round(upper),
+    mid: round(mid),
+    lower: round(lower),
+    width: mid ? round((upper - lower) / mid, 4) : null,
+    position:
+      close >= upper
+        ? "above_upper"
+        : close <= lower
+          ? "below_lower"
+          : close >= mid
+            ? "upper_half"
+            : "lower_half"
+  };
+}
+
+function calculateKdj(bars, period = 9) {
+  if (bars.length < period) return null;
+  let k = 50;
+  let d = 50;
+  const values = [];
+  for (let index = period - 1; index < bars.length; index += 1) {
+    const window = bars.slice(index - period + 1, index + 1);
+    const high = highest(window.map((bar) => bar.high));
+    const low = lowest(window.map((bar) => bar.low));
+    const close = bars[index].close;
+    const rsv = high === low ? 50 : ((close - low) / (high - low)) * 100;
+    k = (2 * k + rsv) / 3;
+    d = (2 * d + k) / 3;
+    values.push({ k, d, j: 3 * k - 2 * d });
+  }
+  const last = values[values.length - 1];
+  const previous = values[values.length - 2] || last;
+  return {
+    k: round(last.k, 2),
+    d: round(last.d, 2),
+    j: round(last.j, 2),
+    signal:
+      last.k > last.d && previous.k <= previous.d
+        ? "golden_cross"
+        : last.k < last.d && previous.k >= previous.d
+          ? "death_cross"
+          : last.j >= 80
+            ? "overbought"
+            : last.j <= 20
+              ? "oversold"
+              : last.k >= last.d
+                ? "bullish"
+                : "bearish"
+  };
+}
+
+function calculateIndicators(bars, closes) {
+  const rsi6 = calculateRsi(closes, 6);
+  const rsi14 = calculateRsi(closes, 14);
+  return {
+    rsi: {
+      rsi6,
+      rsi14,
+      signal:
+        rsi14 === null
+          ? "insufficient"
+          : rsi14 >= 70
+            ? "overbought"
+            : rsi14 <= 30
+              ? "oversold"
+              : rsi14 >= 50
+                ? "bullish"
+                : "bearish"
+    },
+    kdj: calculateKdj(bars),
+    boll: calculateBoll(closes),
+    macd: calculateMacd(closes)
+  };
+}
+
 function highest(values) {
   return values.length ? Math.max(...values) : null;
 }
@@ -105,6 +258,7 @@ export function summarizeKlines(dataset) {
   const previous = bars[bars.length - 2];
   const last20 = bars.slice(-20);
   const last60 = bars.slice(-60);
+  const indicators = calculateIndicators(bars, closes);
 
   return {
     source: dataset.source,
@@ -124,6 +278,7 @@ export function summarizeKlines(dataset) {
     low60: lowest(last60.map((bar) => bar.low)),
     avgVolume5: movingAverage(volumes, 5),
     avgVolume20: movingAverage(volumes, 20),
+    indicators,
     trend:
       movingAverage(closes, 5) !== null && movingAverage(closes, 20) !== null
         ? movingAverage(closes, 5) >= movingAverage(closes, 20)
@@ -258,6 +413,7 @@ export function klineToPrompt(dataset, maxBars = 20) {
     `code: ${dataset.code || ""}`,
     `count: ${dataset.bars.length}`,
     `summary: last_close=${summary?.last?.close ?? ""}, ma5=${summary?.ma5 ?? ""}, ma10=${summary?.ma10 ?? ""}, ma20=${summary?.ma20 ?? ""}, ma60=${summary?.ma60 ?? ""}, high20=${summary?.high20 ?? ""}, low20=${summary?.low20 ?? ""}, trend=${summary?.trend ?? ""}`,
+    `indicators: ${JSON.stringify(summary?.indicators || {})}`,
     `recent_bars:\n${bars}`
   ].join("\n");
 }
